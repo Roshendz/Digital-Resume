@@ -6,7 +6,7 @@
 
     /* ---------- dynamic facts ---------- */
     const now = new Date();
-    $$('[data-years]').forEach(el => (el.textContent = now.getFullYear() - 2017));
+    $$('[data-years]').forEach(el => (el.textContent = now.getFullYear() - 2016));
     $$('[data-year]').forEach(el => (el.textContent = now.getFullYear()));
 
     const tick = () => {
@@ -166,6 +166,52 @@
         setTimeout(() => openApp(location.hash.slice(1)), 450);
     }
 
+    /* ---------- semantic_zoom mini demo (inside the sheet) ---------- */
+    const setLevel = (sz, level) => {
+        const text = $('.sz__text', sz);
+        const max = 2;
+        level = Math.max(0, Math.min(max, level));
+        if (String(level) === sz.dataset.level) return;
+        sz.dataset.level = level;
+        $$('[data-level]', sz).forEach(b => b.setAttribute('aria-pressed', String(+b.dataset.level === level)));
+        if (reduceMotion) return void (text.textContent = text.dataset['l' + level]);
+        text.classList.add('swap');
+        setTimeout(() => {
+            text.textContent = text.dataset['l' + level];
+            text.classList.remove('swap');
+        }, 180);
+    };
+    document.addEventListener('click', e => {
+        const btn = e.target.closest('[data-sz] [data-level]');
+        if (btn) setLevel(btn.closest('[data-sz]'), +btn.dataset.level);
+    });
+    let pinch = 0;
+    sheet.addEventListener('wheel', e => {
+        const sz = e.target.closest('[data-sz]');
+        if (!sz || !e.ctrlKey) return; // trackpad pinch arrives as ctrl+wheel
+        e.preventDefault();
+        pinch -= e.deltaY;
+        if (Math.abs(pinch) < 24) return;
+        setLevel(sz, (+sz.dataset.level || 0) + Math.sign(pinch));
+        pinch = 0;
+    }, { passive: false });
+    let touchStart = 0;
+    sheet.addEventListener('touchstart', e => {
+        if (e.touches.length === 2 && e.target.closest('[data-sz]')) {
+            touchStart = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+        }
+    }, { passive: true });
+    sheet.addEventListener('touchmove', e => {
+        const sz = e.target.closest('[data-sz]');
+        if (!sz || e.touches.length !== 2 || !touchStart) return;
+        e.preventDefault();
+        const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+        if (Math.abs(d - touchStart) > 40) {
+            setLevel(sz, (+sz.dataset.level || 0) + Math.sign(d - touchStart));
+            touchStart = d;
+        }
+    }, { passive: false });
+
     /* ---------- offline mode (manual or real) ---------- */
     const airplane = $('#airplane');
     const onlineLabel = $('[data-online]');
@@ -225,7 +271,7 @@
 
     /* ---------- hello, fellow developer ---------- */
     console.log(
-        '%c RD %c Hey, you opened DevTools — my kind of person.\n%cNo frameworks, no trackers. Say hi: roshendilanlog@gmail.com',
+        '%c RD %c Hey, you opened DevTools — my kind of person.\n%cNo frameworks, no trackers. Flutter folks: pub.dev/packages/semantic_zoom · Say hi: roshendilanlog@gmail.com',
         'background:#d4ff3a;color:#0a0b0f;font-weight:700;padding:2px 6px;border-radius:4px',
         'font-weight:600',
         'color:#8b8f9c'
