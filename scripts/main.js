@@ -271,7 +271,7 @@
 
     /* ---------- hello, fellow developer ---------- */
     console.log(
-        '%c RD %c Hey, you opened DevTools — my kind of person.\n%cNo frameworks, no trackers. Flutter folks: pub.dev/packages/semantic_zoom · Say hi: roshendilanlog@gmail.com',
+        '%c RD %c Hey, you opened DevTools — my kind of person.\n%cNo frameworks, no trackers. Flutter folks: pub.dev/packages/semantic_zoom · Say hi: roshendilandz@gmail.com',
         'background:#d4ff3a;color:#0a0b0f;font-weight:700;padding:2px 6px;border-radius:4px',
         'font-weight:600',
         'color:#8b8f9c'
