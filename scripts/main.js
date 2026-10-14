@@ -269,6 +269,163 @@
     });
     $$('[data-print]').forEach(btn => btn.addEventListener('click', () => print()));
 
+    /* ---------- really offline: service worker + install ---------- */
+    if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+        addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch(() => {}));
+    }
+    const reallyOffline = () => setOffline(true, 'You\'re actually offline, and this page still loaded. Offline-first.');
+    if (!navigator.onLine) {
+        setTimeout(reallyOffline, 900);
+    } else if (location.protocol !== 'file:') {
+        fetch('./manifest.webmanifest?online-check=' + Date.now(), { method: 'HEAD', cache: 'no-store' })
+            .catch(() => setTimeout(reallyOffline, 900));
+    }
+
+    const installBtn = $('#install');
+    const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone;
+    const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent) ||
+        (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    let deferredPrompt = null;
+
+    if (standalone) {
+        document.documentElement.classList.add('standalone');
+    } else if (isIOS) {
+        installBtn.hidden = false;
+    }
+    addEventListener('beforeinstallprompt', e => {
+        e.preventDefault();
+        deferredPrompt = e;
+        installBtn.hidden = false;
+    });
+    installBtn.addEventListener('click', async () => {
+        if (deferredPrompt) {
+            deferredPrompt.prompt();
+            await deferredPrompt.userChoice;
+            deferredPrompt = null;
+            installBtn.hidden = true;
+        } else if (isIOS) {
+            toast('Tap Share, then “Add to Home Screen”. My résumé becomes an app.');
+        }
+    });
+    addEventListener('appinstalled', () => {
+        installBtn.hidden = true;
+        toast('Installed. My résumé is on your home screen, and it works offline.');
+    });
+
+    /* ---------- page-wide semantic zoom ---------- */
+    const LEVELS = ['10s', '1min', 'full'];
+    const rules = [
+        ['.marquee', 2],
+        ['#apps .section__sub, #log .section__sub', 1],
+        ['#app-argo, #app-ledger, #app-coripet, #app-triatel, #app-mag, #app-road', 1],
+        ['.section--principles', 1],
+        ['.principles p', 2],
+        ['.commit__msgs', 1],
+        ['.commit__msgs li:not(:first-child)', 2],
+        ['#stack', 1],
+    ];
+    rules.forEach(([sel, min]) => $$(sel).forEach(el => (el.dataset.min = min)));
+    const swaps = $$('[data-l0]:not(.sz__text)');
+    swaps.forEach(el => (el.dataset.l2 = el.innerHTML));
+
+    const anchorCandidates = '.hero, .section__head, .app, .principles li, .commit, .window, .contact';
+    const findAnchor = (x, y) => {
+        const hit = x != null && document.elementFromPoint(x, y)?.closest(anchorCandidates);
+        if (hit) return hit;
+        return $$(anchorCandidates).find(el => {
+            const r = el.getBoundingClientRect();
+            return r.height && r.bottom > 90;
+        });
+    };
+
+    let pageLevel = 2;
+    const setPageLevel = (level, { x, y, silent } = {}) => {
+        level = Math.max(0, Math.min(2, level));
+        if (level === pageLevel) return;
+        const anchor = scrollY > 40 ? findAnchor(x, y) : null;
+        const before = anchor?.getBoundingClientRect().top;
+        const wasHidden = new Set($$('[data-min]').filter(el => !el.offsetParent));
+
+        pageLevel = level;
+        document.body.dataset.level = level;
+        $$('[data-page-level]').forEach(b => b.setAttribute('aria-pressed', String(+b.dataset.pageLevel === level)));
+        swaps.forEach(el => {
+            const html = el.dataset['l' + level];
+            if (reduceMotion) return void (el.innerHTML = html);
+            el.classList.add('swap');
+            setTimeout(() => {
+                el.innerHTML = html;
+                el.classList.remove('swap');
+            }, 200);
+        });
+        if (!reduceMotion) {
+            wasHidden.forEach(el => {
+                if (!el.offsetParent) return;
+                el.classList.remove('sz-in');
+                void el.offsetWidth;
+                el.classList.add('sz-in');
+            });
+        }
+        // keep what you were reading exactly where it was, like semantic_zoom does
+        if (anchor && anchor.offsetParent) {
+            scrollBy({ top: anchor.getBoundingClientRect().top - before, behavior: 'instant' });
+        }
+
+        const url = new URL(location.href);
+        level === 2 ? url.searchParams.delete('read') : url.searchParams.set('read', LEVELS[level]);
+        history.replaceState(null, '', url);
+        if (!silent) toast(['The 10-second version. Pinch out or tap “Full” for more.', 'The one-minute version.', 'The full story.'][level]);
+    };
+
+    $$('[data-page-level]').forEach(b => b.addEventListener('click', () => setPageLevel(+b.dataset.pageLevel)));
+
+    const initial = LEVELS.indexOf(new URLSearchParams(location.search).get('read'));
+    if (initial >= 0) setPageLevel(initial, { silent: true });
+
+    // Links to sections hidden at the current level expand the page first.
+    document.addEventListener('click', e => {
+        const a = e.target.closest('a[href^="#"]');
+        const target = a && a.getAttribute('href').length > 1 && document.querySelector(a.getAttribute('href'));
+        if (target && !target.offsetParent && pageLevel < 2) {
+            setPageLevel(2, { silent: true });
+            requestAnimationFrame(() => target.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth' }));
+            e.preventDefault();
+        }
+    });
+
+    // Trackpad pinch (ctrl + fractional wheel) changes detail; a real mouse ctrl+wheel still zooms the browser.
+    let pagePinch = 0;
+    let pinchTimer;
+    addEventListener('wheel', e => {
+        if (!e.ctrlKey || sheet.open || Number.isInteger(e.deltaY)) return;
+        e.preventDefault();
+        pagePinch -= e.deltaY;
+        clearTimeout(pinchTimer);
+        pinchTimer = setTimeout(() => (pagePinch = 0), 250);
+        if (Math.abs(pagePinch) < 18) return;
+        setPageLevel(pageLevel + Math.sign(pagePinch), { x: e.clientX, y: e.clientY });
+        pagePinch = 0;
+    }, { passive: false });
+    // Safari trackpad pinch
+    let gestureBase = 1;
+    addEventListener('gesturestart', e => { if (!sheet.open) { e.preventDefault(); gestureBase = 1; } });
+    addEventListener('gesturechange', e => {
+        if (sheet.open) return;
+        e.preventDefault();
+        if (e.scale / gestureBase > 1.25) { setPageLevel(pageLevel + 1, { x: e.clientX, y: e.clientY }); gestureBase = e.scale; }
+        if (e.scale / gestureBase < 0.8) { setPageLevel(pageLevel - 1, { x: e.clientX, y: e.clientY }); gestureBase = e.scale; }
+    });
+
+    // The PDF résumé always prints in full.
+    let levelBeforePrint = 2;
+    addEventListener('beforeprint', () => {
+        levelBeforePrint = pageLevel;
+        swaps.forEach(el => (el.innerHTML = el.dataset.l2));
+    });
+    addEventListener('afterprint', () => {
+        swaps.forEach(el => (el.innerHTML = el.dataset['l' + levelBeforePrint]));
+    });
+
     /* ---------- hello, fellow developer ---------- */
     console.log(
         '%c RD %c Hey, you opened DevTools — my kind of person.\n%cNo frameworks, no trackers. Flutter folks: pub.dev/packages/semantic_zoom · Say hi: roshendilandz@gmail.com',
