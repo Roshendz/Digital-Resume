@@ -78,11 +78,11 @@
     /* ---------- toast ---------- */
     const toastEl = $('.toast');
     let toastTimer;
-    const toast = msg => {
+    const toast = (msg, ms = 3600) => {
         toastEl.textContent = msg;
         toastEl.classList.add('show');
         clearTimeout(toastTimer);
-        toastTimer = setTimeout(() => toastEl.classList.remove('show'), 3600);
+        toastTimer = setTimeout(() => toastEl.classList.remove('show'), ms);
     };
 
     /* ---------- app launch sheet ---------- */
@@ -287,24 +287,34 @@
         (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
     let deferredPrompt = null;
 
+    const ua = navigator.userAgent;
+    const installSteps = () => {
+        if (isIOS) return 'Tap the Share button, then “Add to Home Screen”. My résumé becomes an app.';
+        if (/android/i.test(ua)) return 'Open the browser menu (⋮) and tap “Install app” or “Add to Home screen”.';
+        if (/firefox/i.test(ua)) return 'Firefox can’t install web apps. Open this page in Chrome, Edge or Safari to install it.';
+        if (/edg\//i.test(ua)) return 'Click the install icon in the address bar, or menu (…) → Apps → “Install this site as an app”.';
+        if (/chrome|chromium/i.test(ua)) return 'Click the install icon at the right of the address bar, or menu (⋮) → Cast, save and share → “Install page as app”.';
+        if (/safari/i.test(ua)) return 'In Safari, choose File → “Add to Dock”. My résumé becomes a Mac app.';
+        return 'Use your browser’s “Install app” or “Add to Home Screen” option.';
+    };
+
     if (standalone) {
         document.documentElement.classList.add('standalone');
-    } else if (isIOS) {
+    } else {
         installBtn.hidden = false;
     }
     addEventListener('beforeinstallprompt', e => {
         e.preventDefault();
         deferredPrompt = e;
-        installBtn.hidden = false;
     });
     installBtn.addEventListener('click', async () => {
         if (deferredPrompt) {
             deferredPrompt.prompt();
-            await deferredPrompt.userChoice;
+            const { outcome } = await deferredPrompt.userChoice;
             deferredPrompt = null;
-            installBtn.hidden = true;
-        } else if (isIOS) {
-            toast('Tap Share, then “Add to Home Screen”. My résumé becomes an app.');
+            if (outcome === 'accepted') installBtn.hidden = true;
+        } else {
+            toast(installSteps(), 7000);
         }
     });
     addEventListener('appinstalled', () => {

@@ -1,5 +1,5 @@
 // Offline-first service worker: the résumé keeps working without a network.
-const VERSION = 'rd-v2';
+const VERSION = 'rd-v3';
 const CORE = [
     './',
     './index.html',
